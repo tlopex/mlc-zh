@@ -5,7 +5,7 @@
 为了本课程的目标，我们会使用 TVM （一个开源的机器学习编译框架）中一些正在持续开发的部分。我们提供了下面的命令用于为 MLC 课程安装一个包装好的版本。
 
 ```bash
-python3 -m  pip install mlc-ai-nightly -f https://mlc.ai/wheels
+python -m pip install --pre -U -f https://mlc.ai/wheels mlc-ai-nightly-cpu
 ```
 
 ### 序言
@@ -474,15 +474,15 @@ np.testing.assert_allclose(c_mm_relu, c_np, rtol=1e-5)
 当我们针对不同的平台（例如 Android 手机）或具有特殊说明的平台（Intel Skylake）时，我们需要相应地调整 `target`。当我们开始部署到这些环境时，我们将讨论不同的目标选择。
 
 ```{.python .input n=18}
-rt_lib = tvm.build(MyModule, target="llvm")
+rt_lib = tvm.compile(MyModule, target="llvm")
 ```
 
 然后，我们将创建三个用于保存输入和输出的 TVM NDArray。
 
 ```{.python .input n=19}
-a_nd = tvm.nd.array(a_np)
-b_nd = tvm.nd.array(b_np)
-c_nd = tvm.nd.empty((128, 128), dtype="float32")
+a_nd = tvm.runtime.tensor(a_np)
+b_nd = tvm.runtime.tensor(b_np)
+c_nd = tvm.runtime.tensor(np.empty((128, 128), dtype="float32"))
 type(c_nd)
 ```
 
@@ -498,7 +498,7 @@ np.testing.assert_allclose(c_mm_relu, c_nd.numpy(), rtol=1e-5)
 我们已经构建并运行了原始的 `MyModule`。 我们还可以构建变换后的程序。
 
 ```{.python .input n=21}
-rt_lib_after = tvm.build(sch.mod, target="llvm")
+rt_lib_after = tvm.compile(sch.mod, target="llvm")
 rt_lib_after["mm_relu"](a_nd, b_nd, c_nd)
 np.testing.assert_allclose(c_mm_relu, c_nd.numpy(), rtol=1e-5)
 ```
@@ -506,9 +506,9 @@ np.testing.assert_allclose(c_mm_relu, c_nd.numpy(), rtol=1e-5)
 最后，我们可以比较一下两者的时间差。 `time_evaluator` 是一个辅助的测试函数，可用于比较不同生成函数的运行性能。
 
 ```{.python .input n=22}
-f_timer_before = rt_lib.time_evaluator("mm_relu", tvm.cpu())
+f_timer_before = rt_lib.mod.time_evaluator("mm_relu", tvm.cpu())
 print("Time cost of MyModule %g sec" % f_timer_before(a_nd, b_nd, c_nd).mean)
-f_timer_after = rt_lib_after.time_evaluator("mm_relu", tvm.cpu())
+f_timer_after = rt_lib_after.mod.time_evaluator("mm_relu", tvm.cpu())
 print("Time cost of transformed sch.mod %g sec" % f_timer_after(a_nd, b_nd, c_nd).mean)
 ```
 
@@ -555,8 +555,8 @@ def transform(mod, jfactor):
 
 mod_transformed = transform(MyModule, jfactor=8)
 
-rt_lib_transformed = tvm.build(mod_transformed, "llvm")
-f_timer_transformed = rt_lib_transformed.time_evaluator("mm_relu", tvm.cpu())
+rt_lib_transformed = tvm.compile(mod_transformed, "llvm")
+f_timer_transformed = rt_lib_transformed.mod.time_evaluator("mm_relu", tvm.cpu())
 print("Time cost of transformed mod_transformed %g sec" % f_timer_transformed(a_nd, b_nd, c_nd).mean)
 # display the code below
 IPython.display.Code(mod_transformed.script(), language="python")

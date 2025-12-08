@@ -77,13 +77,13 @@ sch.mod.show()
 我们可以在 GPU 上构建和测试生成的函数。
 
 ```python
-rt_mod = tvm.build(sch.mod, target="cuda")
+rt_mod = tvm.compile(sch.mod, target="cuda")
 
 A_np = np.random.uniform(size=(1024,)).astype("float32")
 B_np = np.random.uniform(size=(1024,)).astype("float32")
-A_nd = tvm.nd.array(A_np, tvm.cuda(0))
-B_nd = tvm.nd.array(B_np, tvm.cuda(0))
-C_nd = tvm.nd.array(np.zeros((1024,), dtype="float32"), tvm.cuda(0))
+A_nd = tvm.runtime.tensor(A_np)
+B_nd = tvm.runtime.tensor(B_np)
+C_nd = tvm.runtime.tensor(np.zeros((1024,), dtype="float32"))
 
 rt_mod["main"](A_nd, B_nd, C_nd)
 print(A_nd)
@@ -101,8 +101,8 @@ print(C_nd)
 @tvm.script.ir_module
 class MyModuleWindowSum:
     @T.prim_func
-    def main(A: T.Buffer[(1027,), "float32"],
-             B: T.Buffer[(1024,), "float32"]) -> None:
+    def main(A: T.Buffer((1027,), "float32"),
+             B: T.Buffer((1024,), "float32")) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i in T.grid(1024):
             with T.block("C"):
@@ -152,7 +152,7 @@ sch.mod.show()
 **值得注意的是，构建过程会自动压缩共享内存阶段以使用线程块中使用的最小区域。**
 
 ```python
-rt_mod = tvm.build(sch.mod, target="cuda")
+rt_mod = tvm.compile(sch.mod, target="cuda")
 print(rt_mod.imported_modules[0].get_source())
 ```
 
@@ -161,7 +161,7 @@ print(rt_mod.imported_modules[0].get_source())
 MLC 过程通常支持针对多种硬件平台，我们可以通过改变目标参数来生成 Metal 代码（这是另一种 GPU 编程模型）。
 
 ```python
-rt_mod = tvm.build(sch.mod, target="metal")
+rt_mod = tvm.compile(sch.mod, target="metal")
 print(rt_mod.imported_modules[0].get_source())
 ```
 
@@ -227,16 +227,16 @@ sch.mod.show()
 ```
 
 ```python
-rt_mod = tvm.build(sch.mod, target="cuda")
+rt_mod = tvm.compile(sch.mod, target="cuda")
 dev = tvm.cuda(0)
 A_np = np.random.uniform(size=(1024, 1024)).astype("float32")
 B_np = np.random.uniform(size=(1024, 1024)).astype("float32")
-A_nd = tvm.nd.array(A_np, dev)
-B_nd = tvm.nd.array(B_np, dev)
-C_nd = tvm.nd.array(np.zeros((1024, 1024), dtype="float32"), dev)
+A_nd = tvm.runtime.tensor(A_np)
+B_nd = tvm.runtime.tensor(B_np)
+C_nd = tvm.runtime.tensor(np.zeros((1024, 1024), dtype="float32"))
 
 num_flop = 2 * 1024 * 1024 * 1024
-evaluator = rt_mod.time_evaluator("main", dev, number=10)
+evaluator = rt_mod.mod.time_evaluator("main", dev, number=10)
 
 print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```
@@ -298,9 +298,9 @@ sch.mod.show()
 ```
 
 ```python
-rt_mod = tvm.build(sch.mod, target="cuda")
+rt_mod = tvm.compile(sch.mod, target="cuda")
 dev = tvm.cuda(0)
-evaluator = rt_mod.time_evaluator("main", dev, number=10)
+evaluator = rt_mod.mod.time_evaluator("main", dev, number=10)
 
 print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```
@@ -324,9 +324,9 @@ sch.mod.show()
 ```
 
 ```python
-rt_mod = tvm.build(sch.mod, target="nvidia/tesla-p100")
+rt_mod = tvm.compile(sch.mod, target="nvidia/tesla-p100")
 dev = tvm.cuda(0)
-evaluator = rt_mod.time_evaluator("main", dev, number=10)
+evaluator = rt_mod.mod.time_evaluator("main", dev, number=10)
 
 print("MetaSchedule: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```

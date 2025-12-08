@@ -378,10 +378,11 @@ def main(x: R.Tensor((1, "m"), "float32"),
 IPython.display.Code(MyModule.script(), language="python")
 ```
 
-我们调用 `relax.build` 来构建这个函数。 注意：Relax 仍在开发中，因此某些 API 可能会更改。 不过，我们的主要目标是熟悉端到端模型的整体 MLC 流程（构造、转换、构建）。
+我们调用 `tvm.compile` 来构建这个函数。 注意：Relax 仍在开发中，因此某些 API 可能会更改。 不过，我们的主要目标是熟悉端到端模型的整体 MLC 流程（构造、转换、构建）。
 
 ```{.python .input n=11}
-ex = relax.build(MyModule, target="llvm")
+target = tvm.target.Target("llvm", host="llvm")
+ex = tvm.compile(MyModule, target)
 type(ex)
 ```
 
@@ -394,8 +395,8 @@ vm = relax.VirtualMachine(ex, tvm.cpu())
 现在我们准备好运行模型了。 我们首先构建包含输入数据和权重的 tvm NDArray。
 
 ```{.python .input n=13}
-data_nd = tvm.nd.array(img.reshape(1, 784))
-nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
+data_nd = tvm.runtime.tensor(img.reshape(1, 784))
+nd_params = {k: tvm.runtime.tensor(v) for k, v in mlp_params.items()}
 ```
 
 然后我们可以通过传入输入参数和权重来运行 `main` 函数。
@@ -454,11 +455,11 @@ R.call_dps_packed("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
 为了能够执行调用外部函数的代码，我们需要注册相应的函数。 下面的代码注册了函数的两个实现：
 
 ```{.python .input n=17}
-@tvm.register_func("env.linear", override=True)
-def torch_linear(x: tvm.nd.NDArray,
-                 w: tvm.nd.NDArray,
-                 b: tvm.nd.NDArray,
-                 out: tvm.nd.NDArray):
+@tvm.register_global_func("env.linear", override=True)
+def torch_linear(x: tvm.runtime.Tensor,
+                 w: tvm.runtime.Tensor,
+                 b: tvm.runtime.Tensor,
+                 out: tvm.runtime.Tensor):
     x_torch = torch.from_dlpack(x)
     w_torch = torch.from_dlpack(w)
     b_torch = torch.from_dlpack(b)
@@ -466,9 +467,9 @@ def torch_linear(x: tvm.nd.NDArray,
     torch.mm(x_torch, w_torch.T, out=out_torch)
     torch.add(out_torch, b_torch, out=out_torch)
 
-@tvm.register_func("env.relu", override=True)
-def lnumpy_relu(x: tvm.nd.NDArray,
-                out: tvm.nd.NDArray):
+@tvm.register_global_func("env.relu", override=True)
+def lnumpy_relu(x: tvm.runtime.Tensor,
+                out: tvm.runtime.Tensor):
     x_torch = torch.from_dlpack(x)
     out_torch = torch.from_dlpack(out)
     torch.maximum(x_torch, torch.Tensor([0.0]), out=out_torch)
@@ -485,7 +486,8 @@ def lnumpy_relu(x: tvm.nd.NDArray,
 现在我们可以构建并运行`MyModuleWithExternCall`，我们可以验证模型得到了相同的结果。
 
 ```{.python .input n=18}
-ex = relax.build(MyModuleWithExternCall, target="llvm")
+target = tvm.target.Target("llvm", host="llvm")
+ex = tvm.compile(MyModuleWithExternCall, target)
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd,
@@ -546,7 +548,8 @@ class MyModuleMixture:
 上面的代码块显示了一个示例，其中 `linear0` 仍然在 `TensorIR` 中实现，而其余函数被重定向到库函数。 我们可以构建并运行以验证结果。
 
 ```{.python .input n=20}
-ex = relax.build(MyModuleMixture, target="llvm")
+target = tvm.target.Target("llvm", host="llvm")
+ex = tvm.compile(MyModuleMixture, target)
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd,
@@ -571,7 +574,8 @@ IPython.display.Code(MyModuleWithParams.script(), language="python")
 在上面的脚本中，`meta[relay.Constant][0]` （译者注：目前 `Relax` 的常量表达依然继承自 `Relay` ，未来该 API 可能会更改） 对应于一个存储常量的隐式字典（它没有显示为脚本的一部分，但仍然是 IRModule 的一部分）。 如果我们构建转换后的 IRModule，我们现在可以通过传入输入数据来调用该函数。
 
 ```{.python .input n=22}
-ex = relax.build(MyModuleWithParams, target="llvm")
+target = tvm.target.Target("llvm", host="llvm")
+ex = tvm.compile(MyModuleWithParams, target)
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd)
